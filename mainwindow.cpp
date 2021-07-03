@@ -38,6 +38,7 @@ MainWindow::MainWindow(QWidget *parent)
     configSerialPortHandle = new QSerialPort();
     plotTimer = new QTimer(this);
     uartTimer = new QTimer(this);
+    frameCountTimer = new QTimer(this);
 
     ui->startPlotPushButton->setStyleSheet("color: #191970");
     ui->pausePlotPushButton->setStyleSheet("color: #191970");
@@ -63,9 +64,12 @@ MainWindow::MainWindow(QWidget *parent)
 
     ui->breathRateLcdNumber->display("--");
     ui->heartRateLcdNumber->display("--");
+//    ui->hduLogoLabel->hide();
 
     connect(plotTimer,SIGNAL(timeout()),this,SLOT(on_plotTimer_updated()));
     connect(uartTimer,SIGNAL(timeout()),this,SLOT(on_uartTimer_updated()));
+    connect(frameCountTimer,SIGNAL(timeout()),this,SLOT(on_frameCountTimer_updated()));
+
 
 }
 
@@ -79,8 +83,9 @@ void MainWindow::initStyle()
     //加载样式表
     QString qss;
 //    QFile file(":/qss/psblack.css");
-    QFile file(":/qss/flatwhite.css");
+      QFile file(":/qss/flatwhite.css");
 //    QFile file(":/qss/lightblue.css");
+//    QFile file(":/darkstyle/darkstyle.qss");
     if (file.open(QFile::ReadOnly)) {
 #if 1
         //用QTextStream读取样式文件不用区分文件编码 带bom也行
@@ -109,14 +114,20 @@ void MainWindow::initStyle()
 void MainWindow::resetPlotStatus()
 {
     mmwaveAdValueCurve->clearData();
+    bmd101AdValueCurve->clearData();
     mmwaveProcessedValueCurve->clearData();
     plotPoints = 0;
-    processingWaveformDataQueue.clear();
+    processingMMwaveWaveformDataQueue.clear();
+    processingBmd101WaveformDataQueue.clear();
+    rawMMwaveWaveformIssueQueue.clear();
+    rawBmd101WaveformIssueQueue.clear();
     for(int i = 0; i < 128; i++) {
-        processingWaveformDataQueue.append(0);
+        processingMMwaveWaveformDataQueue.append(0);
+        processingMMwaveWaveformDataQueue.append(0);
     }
     ui->mmwaveAdValuePlot->replot();
     ui->mmwaveProcessedPlot->replot();
+    plotStarted = false;
 }
 
 void MainWindow::resetWaveformData()
@@ -140,6 +151,9 @@ void MainWindow::initializePlot()
 
     mmwaveAdValueCurve = ui->mmwaveAdValuePlot->addGraph();//画曲线
     mmwaveAdValueCurve->setSmooth(true);
+    bmd101AdValueCurve = ui->mmwaveAdValuePlot->addGraph();
+    mmwaveAdValueCurve->setSmooth(true);
+    bmd101AdValueCurve->setPen(QPen(Qt::red));
 
     ui->mmwaveProcessedPlot->setInteractions( QCP::iRangeDrag|QCP::iRangeZoom| QCP::iSelectAxes |
                                             QCP::iSelectLegend | QCP::iSelectPlottables);
@@ -154,18 +168,24 @@ void MainWindow::initializePlot()
     mmwaveProcessedValueCurve->setSmooth(true);
     resetPlotStatus();
     resetWaveformData();
-    rawWaveformIssueQueue.clear();
+    rawMMwaveWaveformIssueQueue.clear();
+    rawBmd101WaveformIssueQueue.clear();
 
     ui->mmwaveProcessedPlot->replot();
+    plotStarted = false;
 
 }
 
-void MainWindow::refreshPlot(QCustomPlot *customPlot, int key, double num)
+void MainWindow::refreshPlot(QCustomPlot *customPlot, int key, int value1, int value2)
 {
     // 给曲线添加数据
-    customPlot->graph(0)->addData(key, num);
-    if(ui->automaticZoomCheckBox->isChecked())
+
+    customPlot->graph(0)->addData(key, value1);
+    customPlot->graph(1)->addData(key, value2);
+    if(ui->automaticZoomCheckBox->isChecked()) {
         customPlot->graph(0)->rescaleValueAxis();
+        customPlot->graph(1)->rescaleValueAxis();
+    }
 
     if(ui->automaticShiftCheckBox->isChecked())
         customPlot->xAxis->setRange(key, 500, Qt::AlignRight);
@@ -196,58 +216,59 @@ void MainWindow::plotWaveform()
     if(ui->inputSelectFileRadioButton->isChecked() && plotPoints == waveformLength)
         plotTimer->stop();
     else {
-        refreshPlot(ui->mmwaveAdValuePlot, plotPoints, rawWaveformIssueQueue.at(plotPoints));
-        processingWaveformDataQueue.append(rawWaveformIssueQueue.at(plotPoints));
-        processingWaveformDataQueue.remove(0);
-        for(int i = 0; i < 128; i++) {
-            fft_wave_data[i]= static_cast<double>(processingWaveformDataQueue.at(i));
-        }
+        refreshPlot(ui->mmwaveAdValuePlot, plotPoints, rawMMwaveWaveformIssueQueue.at(plotPoints), rawBmd101WaveformIssueQueue.at(plotPoints));
+        processingMMwaveWaveformDataQueue.append(rawMMwaveWaveformIssueQueue.at(plotPoints));
+        processingMMwaveWaveformDataQueue.remove(0);
+//        for(int i = 0; i < 128; i++) {
+//            fft_wave_data[i]= static_cast<double>(processingMMwaveWaveformDataQueue.at(i));
+//        }
 
-        cw_fft_128(fft_wave_data, 5, &fft_freq, &fft_mag, mag_size);
+//        cw_fft_128(fft_wave_data, 5, &fft_freq, &fft_mag, mag_size);
 
-        for(int i = 0; i < 64; i++) {
-            fft_freq_vec.append(fft_freq[i]);
-            fft_mag_vec.append(fft_mag[i].re);
-        }
-        ui->mmwaveProcessedPlot->graph(0)->setData(fft_freq_vec, fft_mag_vec);
-        ui->mmwaveProcessedPlot->rescaleAxes();
-        ui->mmwaveProcessedPlot->replot();
-        fft_freq_vec.clear();
-        fft_mag_vec.clear();
+//        for(int i = 0; i < 64; i++) {
+//            fft_freq_vec.append(fft_freq[i]);
+//            fft_mag_vec.append(fft_mag[i].re);
+//        }
+//        ui->mmwaveProcessedPlot->graph(0)->setData(fft_freq_vec, fft_mag_vec);
+//        ui->mmwaveProcessedPlot->rescaleAxes();
+//        ui->mmwaveProcessedPlot->replot();
+//        fft_freq_vec.clear();
+//        fft_mag_vec.clear();
 
-        cw_lpf(fft_wave_data, &fft_wave_data_lfp);
-        cw_bpf_1_5(fft_wave_data, &fft_wave_data_bfp);
+//        cw_lpf(fft_wave_data, &fft_wave_data_lfp);
+//        cw_bpf_1_5(fft_wave_data, &fft_wave_data_bfp);
 
-        cw_fft_128(fft_wave_data_lfp, 5, &fft_freq, &fft_mag, mag_size);
-        br_max_mag_index = findMaxIndex(fft_mag);
-        breath_rate = static_cast<int>((fft_freq.at(br_max_mag_index) * 60));
+//        cw_fft_128(fft_wave_data_lfp, 5, &fft_freq, &fft_mag, mag_size);
+//        br_max_mag_index = findMaxIndex(fft_mag);
+//        breath_rate = static_cast<int>((fft_freq.at(br_max_mag_index) * 60));
 
-        cw_fft_128(fft_wave_data_bfp, 5, &fft_freq, &fft_mag, mag_size);
-        hr_max_mag_index = findMaxIndex(fft_mag);
-        heart_rate = static_cast<int>((fft_freq.at(hr_max_mag_index) * 60));
+//        cw_fft_128(fft_wave_data_bfp, 5, &fft_freq, &fft_mag, mag_size);
+//        hr_max_mag_index = findMaxIndex(fft_mag);
+//        heart_rate = static_cast<int>((fft_freq.at(hr_max_mag_index) * 60));
 
-        breathrate_lcd_value.setNum(breath_rate);
-        QPalette lcd_palette;
-        if(breath_rate <= 4 || breath_rate >= 30)
-            lcd_palette.setColor(QPalette::Normal,QPalette::WindowText,Qt::red);
-        else
-            lcd_palette.setColor(QPalette::Normal,QPalette::WindowText,0x878991);
-        ui->breathRateLcdNumber->setPalette(lcd_palette);
-        ui->breathRateLcdNumber->display(breathrate_lcd_value);
+//        breathrate_lcd_value.setNum(breath_rate);
+//        QPalette lcd_palette;
+//        if(breath_rate <= 4 || breath_rate >= 30)
+//            lcd_palette.setColor(QPalette::Normal,QPalette::WindowText,Qt::red);
+//        else
+//            lcd_palette.setColor(QPalette::Normal,QPalette::WindowText,0x878991);
+//        ui->breathRateLcdNumber->setPalette(lcd_palette);
+//        ui->breathRateLcdNumber->display(breathrate_lcd_value);
 
-        heartrate_lcd_value.setNum(heart_rate);
-        if(heart_rate <= 40 || heart_rate >= 120)
-            lcd_palette.setColor(QPalette::Normal,QPalette::WindowText,Qt::red);
-        else
-            lcd_palette.setColor(QPalette::Normal,QPalette::WindowText,0x878991);
-        ui->breathRateLcdNumber->setPalette(lcd_palette);
-        ui->heartRateLcdNumber->display(heartrate_lcd_value);
+//        heartrate_lcd_value.setNum(heart_rate);
+//        if(heart_rate <= 40 || heart_rate >= 120)
+//            lcd_palette.setColor(QPalette::Normal,QPalette::WindowText,Qt::red);
+//        else
+//            lcd_palette.setColor(QPalette::Normal,QPalette::WindowText,0x878991);
+//        ui->breathRateLcdNumber->setPalette(lcd_palette);
+//        ui->heartRateLcdNumber->display(heartrate_lcd_value);
 
-        if(ui->inputSelectFileRadioButton->isChecked())
-            ui->displayProgressBar->setValue(plotPoints * 100 / waveformLength);
-        else
-            ui->displayProgressBar->setValue(100);
+//        if(ui->inputSelectFileRadioButton->isChecked())
+//            ui->displayProgressBar->setValue(plotPoints * 100 / waveformLength);
+//        else
+//            ui->displayProgressBar->setValue(100);
         plotPoints ++;
+        frameCounter ++;
     }
 }
 
@@ -269,7 +290,7 @@ void MainWindow::readWaveform(QString waveformFileName)
     if (waveformFileHandle->open(QIODevice::ReadOnly | QIODevice::Text)) {
         resetPlotStatus();
         resetWaveformData();
-        rawWaveformIssueQueue.clear();
+        rawMMwaveWaveformIssueQueue.clear();
         waveformData = waveformFileHandle->readAll();
         qDebug() << waveformData;
         if(waveformData.length() > 0) {
@@ -291,19 +312,20 @@ int MainWindow::parseRawWaveform(QByteArray waveformData)
     int waveformParseStatus = 0;
     int waveformLength = 0;
     quint8 wavefromAdValueTmp;
-    unsigned int wavefromAdValue = 0;
+    int wavefromBmd101AdValue = 0;
+    int wavefromMmwaveAdValue = 0;
 
     for(int i = 0; i < waveformData.length(); i++) {
         switch(waveformParseStatus) {
         case 0:
-            if(waveformData.at(i) == 0)
+            if(static_cast<unsigned char>(waveformData.at(i)) == 0xAA)
                 waveformParseStatus = 1;
             else
                 waveformParseStatus = 0;
         break;
 
         case 1:
-            if(waveformData.at(i) == 0)
+            if(static_cast<unsigned char>(waveformData.at(i)) == 0xAA)
                 waveformParseStatus = 2;
             else
                 waveformParseStatus = 0;
@@ -312,18 +334,39 @@ int MainWindow::parseRawWaveform(QByteArray waveformData)
         case 2:
             waveformParseStatus = 3;
             wavefromAdValueTmp = static_cast<unsigned char>(waveformData.at(i));
-            wavefromAdValue |= wavefromAdValueTmp;
-            wavefromAdValue <<= 8;
+            wavefromBmd101AdValue |= wavefromAdValueTmp;
+            wavefromBmd101AdValue <<= 8;
         break;
 
         case 3:
-                waveformParseStatus = 0;
+                waveformParseStatus = 4;
                 wavefromAdValueTmp = static_cast<unsigned char>(waveformData.at(i));
-                wavefromAdValue |= wavefromAdValueTmp;
-                rawWaveformIssueQueue.append(wavefromAdValue);
-                wavefromAdValue = 0;
-                waveformLength++;
+                wavefromBmd101AdValue |= wavefromAdValueTmp;
+                if(wavefromBmd101AdValue > 32768)
+                    wavefromBmd101AdValue = wavefromBmd101AdValue - 65536;
         break;
+        case 4:
+            waveformParseStatus = 5;
+            wavefromAdValueTmp = static_cast<unsigned char>(waveformData.at(i));
+            wavefromMmwaveAdValue |= wavefromAdValueTmp;
+            wavefromMmwaveAdValue <<= 8;
+        break;
+        case 5:
+            waveformParseStatus = 6;
+            wavefromAdValueTmp = static_cast<unsigned char>(waveformData.at(i));
+            wavefromMmwaveAdValue |= wavefromAdValueTmp;
+            if(wavefromMmwaveAdValue > 32768)
+                wavefromMmwaveAdValue = wavefromMmwaveAdValue - 65536;
+
+        break;
+        case 6:
+            rawBmd101WaveformIssueQueue.append(wavefromBmd101AdValue);
+            rawMMwaveWaveformIssueQueue.append(wavefromMmwaveAdValue);
+            waveformLength++;
+            wavefromBmd101AdValue = 0;
+            wavefromMmwaveAdValue = 0;
+            waveformParseStatus = 0;
+            break;
         default:
             waveformParseStatus = 0;
         break;
@@ -339,7 +382,7 @@ int MainWindow::parseCsvWaveform(QByteArray waveformData)
     string.append(waveformData);
     QStringList adValueStrList = string.split('\n');
     foreach(QString adValueStr, adValueStrList)
-        rawWaveformIssueQueue.append(adValueStr.toInt());
+        rawMMwaveWaveformIssueQueue.append(adValueStr.toInt());
     return adValueStrList.length();
 }
 
@@ -352,23 +395,27 @@ int MainWindow::parseWaveform(QByteArray waveformData, enum FileType waveformFil
         return parseCsvWaveform(waveformData);
 }
 
-void MainWindow::saveWaveform(QString waveformFileName, QVector<unsigned int> waveformAdValue, bool saveFileInCsvFormat)
+void MainWindow::saveWaveform(QString waveformFileName, QVector<int> mmwaveWaveformAdValue, QVector<int> bmd101WaveformAdValue, bool saveFileInCsvFormat)
 {
     QByteArray saveFileContent;
     waveformFileHandle = new QFile(waveformFileName);
 
-    unsigned int pointAdValue;
     saveFileContent.clear();
 
-    foreach(pointAdValue, waveformAdValue) {
+    for(int i = 0; i < mmwaveWaveformAdValue.length(); i++) {
+
         if(saveFileInCsvFormat == true) {
-            saveFileContent.append(QString::number(pointAdValue));
+            saveFileContent.append(QString::number(mmwaveWaveformAdValue.at(i)));
+            saveFileContent.append(",");
+            saveFileContent.append(QString::number(bmd101WaveformAdValue.at(i)));
             saveFileContent.append("\n");
         }
         else {
-            saveFileContent.append('\0');
-            saveFileContent.append('\0');
-            saveFileContent.append(static_cast<qint16>(pointAdValue));
+            saveFileContent.append(static_cast<char>('0xAA'));
+            saveFileContent.append(static_cast<char>('0xAA'));
+            saveFileContent.append(static_cast<qint16>(mmwaveWaveformAdValue.at(i)));
+            saveFileContent.append(static_cast<qint16>(bmd101WaveformAdValue.at(i)));
+            saveFileContent.append(static_cast<char>('0xFF'));
         }
     }
 
@@ -390,25 +437,17 @@ void MainWindow::open_uart(QSerialPort *serialPortHandle, QString pornName, int 
     // 设置串口号
     serialPortHandle->setPortName(pornName);
     // 打开串口
-    if(serialPortHandle->open(QIODevice::ReadWrite))
-    {
+    if(serialPortHandle->open(QIODevice::ReadWrite)) {
         // 设置波特率
         serialPortHandle->setBaudRate(baudrate);
         //设置数据位数
-
         serialPortHandle->setDataBits(QSerialPort::Data8);
-
-        // 设置校验位
-        //SerialPort->setParity(QSerialPort::NoParity);
         //设置奇偶校验
         serialPortHandle->setParity(QSerialPort::NoParity);
-
         // 设置流控制
         serialPortHandle->setFlowControl(QSerialPort::NoFlowControl);
         //设置停止位
-
         serialPortHandle->setStopBits(QSerialPort::OneStop);
-
     }
     //打开串口
     else {
@@ -422,10 +461,8 @@ int MainWindow::read_uart()
     int waveform_length = 0;
     //从缓冲区中读取数据
     QByteArray uart_buffer = dataSerialPortHandle->readAll();
-    if(!uart_buffer.isEmpty()) {//如果非空说明有数据接收
+    if(!uart_buffer.isEmpty()) //如果非空说明有数据接收
         waveform_length = parseWaveform(uart_buffer, raw);
-    }
-
     uart_buffer.clear();
     return waveform_length;
 }
@@ -433,17 +470,14 @@ int MainWindow::read_uart()
 void MainWindow::on_uartTimer_updated()
 {
     waveformLength = read_uart();
-    for(int i = 0; i < waveformLength; i++){
+    for(int i = 0; i < waveformLength; i++)
         plotWaveform();
-    }
 }
 
 void MainWindow::establishUdpConnection(int port)
 {
-    if(!udpRecvSocket->isValid()) {
-        udpRecvSocket = new QUdpSocket(this);
-        udpRecvSocket->bind(port);  //端口8080接收
-    }
+    udpRecvSocket = new QUdpSocket(this);
+    udpRecvSocket->bind(port);  //端口8080接收
     connect(udpRecvSocket, SIGNAL(readyRead()),this,SLOT(on_udpServer_received()));
 }
 
@@ -458,11 +492,12 @@ void MainWindow::on_udpServer_received()
 
         QTextCodec *tutf=QTextCodec::codecForName("UTF-8");  //显示中文
         datagram.resize(udpRecvSocket->pendingDatagramSize());
-        udpRecvSocket->readDatagram(datagram.data(),datagram.size(),\
-                               sourceIP,&sourcePort);    //接收
+        udpRecvSocket->readDatagram(datagram.data(),datagram.size(),sourceIP,&sourcePort);    //接收
         dataStr = tutf->toUnicode(datagram);  //接收数据格式化以便于中文显示
-        qDebug() << "receive udp data: " << dataStr;
-
+//        qDebug() << "receive udp data: " << dataStr;
+        int waveform_length = parseWaveform(datagram, raw);
+        for(int i = 0; i < waveform_length; i++)
+            plotWaveform();
     }
 }
 
@@ -477,24 +512,27 @@ void MainWindow::on_startPlotPushButton_clicked()
         else
             plotTimer->start(ui->displaySpeedSpinBox->text().toInt());
     }
-    else if(ui->inputSelectUartRadioButton->isChecked()) {
-        open_uart(dataSerialPortHandle, dataComName, dataComBaudrate);
-        if(!dataSerialPortHandle->isOpen()) {
-            QMessageBox::critical(this, tr("错误"),  tr("未打开串口"),
-                                  QMessageBox::Accepted,  QMessageBox::Rejected);
-            return;
+    else {
+        if(ui->inputSelectUartRadioButton->isChecked()) {
+            open_uart(dataSerialPortHandle, dataComName, dataComBaudrate);
+            if(!dataSerialPortHandle->isOpen()) {
+                QMessageBox::critical(this, tr("错误"),  tr("未打开串口"),
+                                      QMessageBox::Accepted,  QMessageBox::Rejected);
+                return;
+            }
+            else
+                uartTimer->start(1);
         }
-        else
-            uartTimer->start(1);
+        else if(ui->inputSelectEthRadioButton->isChecked()) {
+            establishUdpConnection(udp_server_port);
+        }
+        frameCounter = 0;
+        frameCountTimer->start(1000);
     }
-    else if(ui->inputSelectEthRadioButton->isChecked()) {
-        establishUdpConnection(udp_server_port);
-    }
-
     ui->inputSelectFileRadioButton->setEnabled(false);
     ui->inputSelectUartRadioButton->setEnabled(false);
     ui->inputSelectEthRadioButton->setEnabled(false);
-
+    plotStarted = true;
 }
 
 void MainWindow::on_pausePlotPushButton_clicked()
@@ -507,24 +545,28 @@ void MainWindow::on_pausePlotPushButton_clicked()
     }
     else if(ui->inputSelectEthRadioButton->isChecked()) {
         udpRecvSocket->close();
+        frameCountTimer->stop();
     }
 }
 
 void MainWindow::on_stopPlotPushButton_clicked()
 {
-    if(ui->inputSelectFileRadioButton->isChecked())
-        plotTimer->stop();
-    else if(ui->inputSelectUartRadioButton->isChecked())
-        uartTimer->stop();
-    else if(ui->inputSelectEthRadioButton->isChecked()) {
-        udpRecvSocket->close();
-        udpRecvSocket->deleteLater();
+    if(plotStarted == true) {
+        if(ui->inputSelectFileRadioButton->isChecked())
+            plotTimer->stop();
+        else if(ui->inputSelectUartRadioButton->isChecked())
+            uartTimer->stop();
+        else if(ui->inputSelectEthRadioButton->isChecked()) {
+            frameCountTimer->stop();
+            udpRecvSocket->close();
+            udpRecvSocket->deleteLater();
+        }
+        resetPlotStatus();
+        ui->inputSelectFileRadioButton->setEnabled(true);
+        ui->inputSelectUartRadioButton->setEnabled(true);
+        ui->inputSelectEthRadioButton->setEnabled(true);
+        plotStarted = false;
     }
-    resetPlotStatus();
-    ui->inputSelectFileRadioButton->setEnabled(true);
-    ui->inputSelectUartRadioButton->setEnabled(true);
-    ui->inputSelectEthRadioButton->setEnabled(true);
-
 }
 
 void MainWindow::on_openPlotPushButton_clicked()
@@ -536,7 +578,6 @@ void MainWindow::on_openPlotPushButton_clicked()
         filter ="waveform(*.mwav)";
     else
         filter="waveform(*.csv)";
-    //打印所有选择的文件的路径
     QString fileName;
     fileName = QFileDialog::getOpenFileName(this, dlgTitle, curPath, filter);
     if (!fileName.isEmpty()) {
@@ -572,7 +613,7 @@ void MainWindow::on_savePlotPushButton_clicked()
     fileName = QFileDialog::getSaveFileName(this, dlgTitle, curPath, filter);
     if (!fileName.isEmpty()) {
         qDebug() << "save file " <<fileName << endl;
-        saveWaveform(fileName, rawWaveformIssueQueue, saveFileInCsvFormat);
+        saveWaveform(fileName, rawMMwaveWaveformIssueQueue, rawBmd101WaveformIssueQueue, saveFileInCsvFormat);
     }
     else
         qDebug() << "error saving file " <<fileName << endl;
@@ -658,15 +699,25 @@ void MainWindow::on_ethSettingPushButton_clicked()
     QFormLayout form(&dialog);
     dialog.setWindowTitle("网络设置");
 
-    QString value1 = QString("IPv4地址: ");
-    QIPAddress *ipWidget = new QIPAddress(&dialog);
-    form.addRow(value1, ipWidget);
+    QString ipValue1 = QString("本地主机地址: ");
+    QIPAddress *ipWidget1 = new QIPAddress(&dialog);
+    form.addRow(ipValue1, ipWidget1);
 
     // Value2
-    QString value2 = QString("端口: ");
-    QLineEdit *portLineEdit = new QLineEdit(&dialog);
+    QString portValue1 = QString("本地主机端口: ");
+    QLineEdit *portLineEdit1 = new QLineEdit(&dialog);
 
-    form.addRow(value2, portLineEdit);
+    form.addRow(portValue1, portLineEdit1);
+
+    QString ipValue2 = QString("远程主机地址: ");
+    QIPAddress *ipWidget2 = new QIPAddress(&dialog);
+    form.addRow(ipValue1, ipWidget2);
+
+    // Value2
+    QString portValue2 = QString("远程主机端口: ");
+    QLineEdit *portLineEdit2 = new QLineEdit(&dialog);
+
+    form.addRow(portValue1, portLineEdit2);
 
     // Add Cancel and OK button
     QDialogButtonBox buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
@@ -678,16 +729,26 @@ void MainWindow::on_ethSettingPushButton_clicked()
 
     // Process when OK button is clicked
     if (dialog.exec() == QDialog::Accepted) {
-        udp_server_port = portLineEdit->text().toInt();
+        udp_server_port = portLineEdit1->text().toInt();
         if(udp_server_port < 0 || udp_server_port > 65535) {
             QMessageBox::critical(this, tr("错误"),  tr("端口数据错误"),
                                   QMessageBox::Accepted,  QMessageBox::Rejected);
             udp_server_port = 0;
         }
-        udp_server_ipaddr = ipWidget->getIP();
-        udp_server_port = portLineEdit->text().toInt();
-        qDebug() << "ip addr: " << udp_server_ipaddr;
-        qDebug() << "port: " << udp_server_port;
+        udp_server_port = portLineEdit2->text().toInt();
+        if(udp_server_port < 0 || udp_server_port > 65535) {
+            QMessageBox::critical(this, tr("错误"),  tr("端口数据错误"),
+                                  QMessageBox::Accepted,  QMessageBox::Rejected);
+            udp_server_port = 0;
+        }
+        udp_server_ipaddr = ipWidget1->getIP();
+        udp_server_port = portLineEdit1->text().toInt();
+        udp_client_ipaddr = ipWidget2->getIP();
+        udp_client_port = portLineEdit2->text().toInt();
+        qDebug() << "server ip addr: " << udp_server_ipaddr;
+        qDebug() << "server port: " << udp_server_port;
+        qDebug() << "client ip addr: " << udp_client_ipaddr;
+        qDebug() << "client port: " << udp_client_port;
     }
 }
 
@@ -757,5 +818,11 @@ void MainWindow::on_serialSettingPushButton_clicked()
         configComName = comboBox1->currentText();
         configComBaudrate = comboBox2->currentText().toInt();
     }
+}
+
+void MainWindow::on_frameCountTimer_updated()
+{
+    qDebug() << "frame: " << frameCounter << endl;
+    frameCounter = 0;
 }
 

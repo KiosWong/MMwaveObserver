@@ -30,10 +30,10 @@ public:
     void resetPlotStatus();
     void resetWaveformData();
     void initializePlot();
-    void refreshPlot(QCustomPlot *customPlot, int key, double num);
+    void refreshPlot(QCustomPlot *customPlot, int key, int value1, int value2);
     void plotWaveform();
     void readWaveform(QString waveformFileName);
-    void saveWaveform(QString waveformFileName, QVector<unsigned int> waveformAdValue, bool saveFileInCsvFormat);
+    void saveWaveform(QString waveformFileName, QVector<int> mmwaveWaveformAdValue, QVector<int> bmd101WaveformAdValue, bool saveFileInCsvFormat);
     int  parseRawWaveform(QByteArray waveformData);
     int  parseCsvWaveform(QByteArray waveformData);
     int  parseWaveform(QByteArray waveformData, enum FileType waveformFileType);
@@ -86,6 +86,8 @@ private slots:
 
     void on_inputSelectEthRadioButton_clicked();
 
+    void on_frameCountTimer_updated();
+
 private:
     Ui::MainWindow *ui;
     QButtonGroup *mRadioButtonGroupInput;
@@ -93,6 +95,7 @@ private:
     QSerialPort *dataSerialPortHandle;
     QSerialPort *configSerialPortHandle;
     QCPGraph *mmwaveAdValueCurve;
+    QCPGraph *bmd101AdValueCurve;
     QCPGraph *mmwaveProcessedValueCurve;
     QString dataComName;
     QString configComName;
@@ -100,18 +103,27 @@ private:
     int configComBaudrate;
     QString udp_server_ipaddr;
     int udp_server_port;
+    QString udp_client_ipaddr;
+    int udp_client_port;
     QUdpSocket *udpRecvSocket;
+    bool plotStarted;
     QTimer *plotTimer;
     QTimer *uartTimer;
     QTimer *ethTimer;
+    QTimer *frameCountTimer;
     QTimer *readWaveformTimer;
     bool automaticRescaleAxis;
     int plotPoints;
+    int frameCounter;
     QFile *waveformFileHandle;
     int waveformLength;
     QByteArray waveformData;
-    QVector<unsigned int> rawWaveformIssueQueue;
-    QVector<unsigned int> processingWaveformDataQueue;
-    QVector<unsigned int> processedWaveformIssueQueue;
+    QVector<int> rawBmd101WaveformIssueQueue;
+    QVector<int> rawMMwaveWaveformIssueQueue;
+    QVector<int> processingBmd101WaveformDataQueue;
+    QVector<int> processingMMwaveWaveformDataQueue;
+    QVector<int> processedBmd101WaveformIssueQueue;
+    QVector<int> processedMMwaveWaveformIssueQueue;
+
 };
 #endif // MAINWINDOW_H

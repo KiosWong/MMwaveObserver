@@ -46,5 +46,7 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
 
 RESOURCES += \
+    darkstyle.qrc \
     logo.qrc \
-    qss.qrc
+    qss.qrc \
+    qss_custom.qrc
